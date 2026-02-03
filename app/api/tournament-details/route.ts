@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { getTournamentDetails } from '@/lib/scraper';
 import { db } from '@/lib/firebaseAdmin';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const url = searchParams.get('url');
