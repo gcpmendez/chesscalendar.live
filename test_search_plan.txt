@@ -1,0 +1,18 @@
+"use strict";
+const scraper = require('./lib/scraper');
+
+async function test() {
+    console.log("Testing search...");
+    // We need to export executeSearch or use getChessResultsData logic?
+    // scraper.getChessResultsData uses executeSearch internally but requires an ID first usually?
+    // Wait, getChessResultsData takes (fideId, playerName). 
+    // If I pass a dummy ID and a name, it fails ID search and falls back to name search.
+    
+    // Let's modify scraper.ts to export searching or just test via getChessResultsData
+    const results = await scraper.getChessResultsData('0000000', 'Carlsen, Magnus');
+    console.log("Results found:", results.length);
+}
+
+// Check if I can run this (need typescript or ts-node)
+// I will just create a small standalone script that copies the search logic 
+// because loading the module might be complex with imports.
