@@ -146,8 +146,11 @@ function TournamentsContent() {
                 if (tempo) params.append("tempo", tempo || "1");
 
                 const res = await fetch(`/api/tournaments?${params.toString()}`);
-                if (!res.ok) throw new Error("Failed to fetch tournaments");
                 const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.details || data.error || "Failed to fetch tournaments");
+                }
                 setTournaments(data);
             } catch (err: any) {
                 setError(err.message);

@@ -4,21 +4,22 @@ if (!admin.apps.length) {
     try {
         let credential;
         if (process.env.FIREBASE_PRIVATE_KEY) {
+            console.log('[FirebaseAdmin] Initializing using environment variables.');
             credential = admin.credential.cert({
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
                 privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
             });
         } else {
-            // Use fs to avoid Webpack bundling issues with dynamic require
-            // This fallback is for local development only
+            console.log('[FirebaseAdmin] No environment variables found, attempting local file fallback.');
             const serviceAccountPath = process.cwd() + '/service-account.json';
-            // We use fs explicit check to prevent crashing if file is missing (e.g. in Vercel if environment vars were also missing)
-            // But usually Vercel should have Env Vars.
             const fs = require('fs');
             if (fs.existsSync(serviceAccountPath)) {
+                console.log('[FirebaseAdmin] Local service-account.json found.');
                 const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
                 credential = admin.credential.cert(serviceAccount);
+            } else {
+                console.log('[FirebaseAdmin] Local service-account.json NOT found.');
             }
         }
 

@@ -85,8 +85,8 @@ export async function GET(request: Request) {
 
         return NextResponse.json(tournaments);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Firestore Search error:', error);
-        return NextResponse.json({ error: 'Failed to fetch tournaments' }, { status: 500 });
+        return NextResponse.json({ error: 'Failed to fetch tournaments', details: error.message }, { status: 500 });
     }
 }
