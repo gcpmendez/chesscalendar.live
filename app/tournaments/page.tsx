@@ -868,7 +868,7 @@ function TournamentsContent() {
             const getLabel = (dateStr: string) => {
                 const d = new Date(dateStr);
                 // Capitalize first letter
-                const s = d.toLocaleString('es', { month: 'long', year: 'numeric' });
+                const s = d.toLocaleString('es', { month: 'long' });
                 return s.charAt(0).toUpperCase() + s.slice(1);
             };
 

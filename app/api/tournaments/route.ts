@@ -39,7 +39,7 @@ export async function GET(request: Request) {
             // Define the same mapping as in scraper
             const CITY_SEARCH_MAPPING: Record<string, string[]> = {
                 "Santa Cruz de Tenerife": ["Tenerife", "La Laguna"],
-                "Las Palmas": ["Gran Canaria", "Las Palmas"],
+                "Las Palmas de Gran Canaria": ["Gran Canaria", "Las Palmas"],
                 "Madrid": ["Madrid"],
                 "Barcelona": ["Barcelona"],
                 "Valencia": ["Valencia"],

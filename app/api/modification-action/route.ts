@@ -1,7 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,12 +82,20 @@ export async function GET(request: NextRequest) {
             }
 
             const updates: Record<string, any> = {};
+            const modifiedFields: string[] = [];
+
             // Map modifications
             modificationData.modifications.forEach((mod: any) => {
                 let dbField = mod.field;
                 if (mod.field === 'timeControl') dbField = 'tempo';
                 updates[dbField] = mod.newValue;
+                modifiedFields.push(dbField);
             });
+
+            // Mark fields as manually edited
+            if (modifiedFields.length > 0) {
+                updates['editedFields'] = FieldValue.arrayUnion(...modifiedFields);
+            }
 
             // Mark as verified optionally?
             // updates['isVerified'] = true; 

@@ -10,7 +10,7 @@ interface CityComboboxProps {
 const SPANISH_CITIES = [
     // Special Island Requests
     { label: "Santa Cruz de Tenerife", value: "Santa Cruz de Tenerife" },
-    { label: "Las Palmas", value: "Las Palmas" },
+    { label: "Las Palmas de Gran Canaria", value: "Las Palmas de Gran Canaria" },
 
     // Mainland Provincial Capitals & Major Cities
     { label: "A Coruña", value: "A Coruña" },

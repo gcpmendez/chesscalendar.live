@@ -1863,7 +1863,7 @@ export async function getLatestSpainTournaments(): Promise<SearchInfo[]> {
  */
 const CITY_SEARCH_MAPPING: Record<string, string[]> = {
     "Santa Cruz de Tenerife": ["Tenerife", "La Laguna"],
-    "Las Palmas": ["Gran Canaria", "Las Palmas"],
+    "Las Palmas de Gran Canaria": ["Gran Canaria", "Las Palmas"],
     "Madrid": ["Madrid"],
     "Barcelona": ["Barcelona"],
     "Valencia": ["Valencia"],
@@ -2082,12 +2082,29 @@ export async function backgroundSyncTournaments(country: string, city: string) {
                 const details = await getTournamentDetails(t.url);
 
                 if (details && details.location && details.location !== 'N/A') {
-                    const payload = {
+                    const payload: any = {
                         ...t,
                         ...details,
                         country,
                         updatedAt: now
                     };
+
+                    // Preserve manually edited fields
+                    if (doc.exists) {
+                        const currentData = doc.data();
+                        const editedFields = currentData?.editedFields || [];
+
+                        if (Array.isArray(editedFields)) {
+                            editedFields.forEach((field: string) => {
+                                if (currentData && currentData[field] !== undefined) {
+                                    payload[field] = currentData[field];
+                                }
+                            });
+                            // Keep the list itself
+                            payload.editedFields = editedFields;
+                        }
+                    }
+
                     await docRef.set(payload);
                     console.log(`[BACKGROUND-SYNC] Updated ${tournamentId} (${t.name})`);
                 }
