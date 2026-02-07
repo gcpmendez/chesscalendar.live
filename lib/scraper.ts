@@ -1998,8 +1998,8 @@ export async function searchTournamentsByPlace(country: string, place: string): 
 
             // LOG Columns for first row to debug
             if (i === 0) {
-                const cols = [];
-                tds.each((_: any, t: any) => cols.push($search(t).text().trim()));
+                const cols: string[] = [];
+                tds.each((_: any, t: any) => { cols.push($search(t).text().trim()); });
                 console.log('[BACKGROUND-SCRAPE] First Row Columns:', cols);
             }
 
