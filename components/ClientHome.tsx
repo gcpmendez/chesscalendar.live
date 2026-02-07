@@ -116,9 +116,14 @@ export default function ClientHome() {
                     <span className="bg-gradient-to-r from-blue-600 to-emerald-600 dark:from-blue-400 dark:to-emerald-400 bg-clip-text text-transparent inline-block pb-4 -mb-4 whitespace-nowrap">
                         Chess Calendar
                     </span>
-                    <span className="self-start -mt-1 px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-500 font-bold border border-rose-500/20 text-xs sm:text-base uppercase tracking-widest shadow-[0_0_15px_rgba(244,63,94,0.15)]">
-                        Live
-                    </span>
+                    <div className="flex flex-col items-center">
+                        <span className="self-start -mt-1 px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-500 font-bold border border-rose-500/20 text-xs sm:text-base uppercase tracking-widest shadow-[0_0_15px_rgba(244,63,94,0.15)]">
+                            Live
+                        </span>
+                        <span className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-500 mt-2 tracking-wider opacity-60">
+                            v.1.0.3
+                        </span>
+                    </div>
                 </h1>
                 <p className="text-lg text-neutral-600 dark:text-neutral-400">
                     Find the best chess tournaments in Spain.
