@@ -8,7 +8,7 @@ export async function POST(request: Request) {
         const { name, country, city, location, website, startDate, endDate, type, notes, submitterEmail, posterImage, regulations } = body;
 
         // Basic validation
-        if (!name || !startDate || !endDate || !submitterEmail) {
+        if (!name || !startDate || !endDate) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
@@ -30,6 +30,11 @@ export async function POST(request: Request) {
         const rejectUrl = `${baseUrl}/api/tournament-submission/action?id=${pendingRef.id}&action=reject`;
 
         // 2. Send Email
+        if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+            console.error('Missing GMAIL_USER or GMAIL_APP_PASSWORD environment variables');
+            return NextResponse.json({ error: 'Server misconfiguration: Missing Email Credentials' }, { status: 500 });
+        }
+
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
             subject: `New Tournament: ${name}`,
             html: `
                 <h2>New Tournament Request</h2>
-                <p><strong>Submitter:</strong> ${submitterEmail}</p>
+                <p><strong>Submitter:</strong> ${submitterEmail || 'Anonymous'}</p>
                 <hr />
                 <h3>Tournament Details</h3>
                 <ul>

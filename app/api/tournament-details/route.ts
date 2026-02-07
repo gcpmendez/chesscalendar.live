@@ -43,6 +43,7 @@ export async function GET(request: Request) {
             // Explicitly ensure critical fields are from DB if present
             posterImage: dbData.posterImage || details.posterImage,
             location: dbData.location || details.location,
+            mapsUrl: dbData.mapsUrl || details.mapsUrl,
             lat: dbData.lat ?? details.lat, // check for null/undefined specifically if lat can be 0 (rare)
             lng: dbData.lng ?? details.lng,
             regulations: dbData.regulations || details.regulations,

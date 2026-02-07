@@ -42,6 +42,7 @@ export default function RootLayout({
           </div>
           <Footer />
           <BuyMeACoffee />
+
           <div className="fixed top-4 right-4 sm:top-[50px] sm:right-[70px] z-50">
             <ThemeToggle />
           </div>

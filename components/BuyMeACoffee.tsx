@@ -43,12 +43,8 @@ export default function BuyMeACoffee() {
             document.body.appendChild(script);
         }
 
-        // Show custom bubble after delay
-        const timer = setTimeout(() => setShowBubble(true), 2000);
-
         return () => {
             window.removeEventListener('resize', checkMobile);
-            clearTimeout(timer);
         };
     }, []);
 

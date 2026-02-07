@@ -1996,7 +1996,14 @@ export async function searchTournamentsByPlace(country: string, place: string): 
             // Skip if can't parse days
             if (daysSinceUpdate < 0) return;
 
-            // Stop if tournament is too old
+            // LOG Columns for first row to debug
+            if (i === 0) {
+                const cols = [];
+                tds.each((_: any, t: any) => cols.push($search(t).text().trim()));
+                console.log('[BACKGROUND-SCRAPE] First Row Columns:', cols);
+            }
+
+            // Stop if tournament is too old (updated more than 60 days ago)
             if (daysSinceUpdate > 60) {
                 console.log(`[BACKGROUND-SCRAPE] Stopping at row ${i}: ${lastUpdateText} (${daysSinceUpdate} days)`);
                 return false; // Break loop
@@ -2042,8 +2049,28 @@ export async function backgroundSyncTournaments(country: string, city: string) {
         SYNC_LOCKS.add(lockKey);
         console.log(`[BACKGROUND-SYNC] Starting sync for City="${city}", Country="${country}"`);
 
-        // Get search terms for the city
-        const searchTerms = CITY_SEARCH_MAPPING[city] || [city];
+        // Load search terms from JSON file
+        let searchTerms = [city];
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const configPath = path.join(process.cwd(), 'lib/city_search_terms.json');
+
+            if (fs.existsSync(configPath)) {
+                const configData = fs.readFileSync(configPath, 'utf-8');
+                const mapping = JSON.parse(configData);
+                if (mapping[city]) {
+                    searchTerms = mapping[city];
+                }
+            } else {
+                // Fallback to internal mapping if file missing (optional, or just use city)
+                searchTerms = CITY_SEARCH_MAPPING[city] || [city];
+            }
+        } catch (err) {
+            console.error("[BACKGROUND-SYNC] Failed to load city_search_terms.json", err);
+            searchTerms = CITY_SEARCH_MAPPING[city] || [city];
+        }
+
         if (!city) {
             console.log("[BACKGROUND-SYNC] No city provided. Skipping sync.");
             return;
@@ -2051,7 +2078,6 @@ export async function backgroundSyncTournaments(country: string, city: string) {
 
         const collection = db.collection('tournaments');
         const now = new Date();
-        const sixtyDaysAgo = new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000));
         const processedThisSession = new Set<string>();
 
         for (const term of searchTerms) {

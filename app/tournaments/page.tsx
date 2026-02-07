@@ -49,6 +49,53 @@ function TournamentsContent() {
         submitterEmail: ""
     });
 
+    const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set(['Standard', 'Rapid', 'Blitz']));
+
+    // Initialize/Update selected types based on URL param
+    useEffect(() => {
+        if (tempo) {
+            const map: Record<string, string> = { '1': 'Standard', '2': 'Rapid', '3': 'Blitz' };
+            const t = map[tempo];
+            if (t) setSelectedTypes(new Set([t]));
+        } else {
+            // If no param, default to ALL active
+            setSelectedTypes(new Set(['Standard', 'Rapid', 'Blitz']));
+        }
+    }, [tempo]);
+
+    // Update fetch to ignore tempo param for API (client-side filtering)
+    useEffect(() => {
+        if (!country) {
+            router.push("/");
+            return;
+        }
+
+        const fetchTournaments = async () => {
+            setLoading(true);
+            try {
+                // We fetch ALL tournaments for this city/country, ignoring the API tempo filter
+                // so we can filter client-side.
+                const params = new URLSearchParams();
+                if (country) params.set("country", country);
+                if (city) params.set("city", city);
+                // Intentionally NOT setting 'tempo' here
+
+                const res = await fetch(`/api/tournaments?${params.toString()}`);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.details || data.error || "Failed to fetch tournaments");
+                }
+                setTournaments(data);
+            } catch (err: any) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchTournaments();
+    }, [country, city, router]); // removed 'tempo' dependency for fetch, handled in separate effect for state
     // Refs for file uploads (Reuse logic from edit)
     const addPosterInputRef = useRef<HTMLInputElement>(null);
     const addRegulationsInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +169,10 @@ function TournamentsContent() {
                 })
             });
 
-            if (!res.ok) throw new Error("Submission failed");
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "Submission failed");
+            }
             setAddFormSuccess(true);
         } catch (err: any) {
             alert("Error submitting tournament: " + err.message);
@@ -130,37 +180,6 @@ function TournamentsContent() {
             setAddFormSubmitting(false);
         }
     };
-
-    useEffect(() => {
-        if (!country) {
-            router.push("/");
-            return;
-        }
-
-        const fetchTournaments = async () => {
-            setLoading(true);
-            try {
-                const params = new URLSearchParams();
-                if (country) params.append("country", country);
-                if (city) params.append("city", city);
-                if (tempo) params.append("tempo", tempo || "1");
-
-                const res = await fetch(`/api/tournaments?${params.toString()}`);
-                const data = await res.json();
-
-                if (!res.ok) {
-                    throw new Error(data.details || data.error || "Failed to fetch tournaments");
-                }
-                setTournaments(data);
-            } catch (err: any) {
-                setError(err.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchTournaments();
-    }, [country, city, tempo, router]);
 
     // Categorize
     const now = new Date();
@@ -188,6 +207,14 @@ function TournamentsContent() {
         // Filter out tournaments ending more than 30 days ago
         if (end < thirtyDaysAgo) return;
 
+        // Filter by Type (Client-side)
+        const tTypeRaw = (t.tempo || '').toLowerCase();
+        let tType = 'Standard';
+        if (tTypeRaw.includes('blitz')) tType = 'Blitz';
+        else if (tTypeRaw.includes('rapid')) tType = 'Rapid';
+
+        if (!selectedTypes.has(tType)) return;
+
         if (now >= start && now <= end) {
             active.push(t);
         } else if (now < start) {
@@ -206,6 +233,7 @@ function TournamentsContent() {
     interface TournamentDetails {
         organizer?: string;
         location?: string;
+        mapsUrl?: string;
         city?: string;
         description?: string;
         totalPlayers?: number;
@@ -234,14 +262,20 @@ function TournamentsContent() {
 
         // Edit modal state
         const [showEditModal, setShowEditModal] = useState(false);
+        const [showDeleteModal, setShowDeleteModal] = useState(false);
+        const [deleteReason, setDeleteReason] = useState('');
         const [editForm, setEditForm] = useState({
             name: '',
             location: '',
             city: '',
             timeControl: '',
+            tempo: 'Standard',
             rounds: '',
             notes: '',
-            submitterEmail: ''
+            submitterEmail: '',
+            startDate: '',
+            endDate: '',
+            url: ''
         });
         const [submitting, setSubmitting] = useState(false);
         const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -254,16 +288,17 @@ function TournamentsContent() {
 
             setExpanded(true);
             if (!details) {
-                // If it's a manual tournament (has submitterEmail), use local data
-                if (t.submitterEmail) {
+                // If it's a manual tournament (no URL or URL is not external), use local data
+                // Or if it strictly has manually added fields
+                if (!t.url || !t.url.startsWith('http')) {
                     setDetails({
-                        location: t.location,
-                        timeControl: t.tempo,
-                        rounds: t.rounds,
-                        description: t.notes,
+                        location: t.location || '',
+                        timeControl: t.tempo || '',
+                        rounds: t.rounds || '',
+                        description: t.notes || '',
                         posterImage: t.posterImage,
                         regulations: t.regulations ? { text: 'View Regulations', url: t.regulations } : undefined,
-                        topPlayers: [] // Manual tournaments don't have player lists yet
+                        topPlayers: []
                     });
                     return;
                 }
@@ -290,12 +325,62 @@ function TournamentsContent() {
                 location: details?.location || '',
                 city: details?.city || '',
                 timeControl: details?.timeControl || '',
+                tempo: t.tempo || 'Standard',
                 rounds: details?.rounds || '',
                 notes: '',
-                submitterEmail: ''
+                submitterEmail: '',
+                startDate: t.start || '',
+                startDate: t.start || '',
+                endDate: t.end || '',
+                url: t.url || ''
             });
             setSubmitSuccess(false);
             setShowEditModal(true);
+        };
+
+        const openDeleteModal = () => {
+            setDeleteReason('');
+            setSubmitSuccess(false);
+            setShowDeleteModal(true);
+        };
+
+        const handleSubmitDelete = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!deleteReason.trim()) {
+                alert('Please provide a reason');
+                return;
+            }
+            setSubmitting(true);
+
+            try {
+                const res = await fetch('/api/tournament-modification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tournamentId: t.url || t.id,
+                        tournamentName: t.name,
+                        modifications: [{
+                            field: 'DELETE_REQUEST',
+                            originalValue: 'Active',
+                            newValue: deleteReason
+                        }],
+                        submitterEmail: editForm.submitterEmail || null,
+                        notes: 'Deletion Request'
+                    })
+                });
+
+                if (res.ok) {
+                    setSubmitSuccess(true);
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to submit');
+                }
+            } catch (err) {
+                console.error('Submit error:', err);
+                alert('Failed to submit deletion request');
+            } finally {
+                setSubmitting(false);
+            }
         };
 
         const posterInputRef = useRef<HTMLInputElement>(null);
@@ -336,11 +421,39 @@ function TournamentsContent() {
                         newValue: editForm.timeControl
                     });
                 }
+                if (editForm.tempo !== (t.tempo || 'Standard')) {
+                    modifications.push({
+                        field: 'tempo',
+                        originalValue: t.tempo || 'Standard',
+                        newValue: editForm.tempo
+                    });
+                }
                 if (editForm.rounds !== (details?.rounds || '')) {
                     modifications.push({
                         field: 'rounds',
                         originalValue: details?.rounds || '',
                         newValue: editForm.rounds
+                    });
+                }
+                if (editForm.startDate !== (t.start || '')) {
+                    modifications.push({
+                        field: 'startDate',
+                        originalValue: t.start || '',
+                        newValue: editForm.startDate
+                    });
+                }
+                if (editForm.endDate !== (t.end || '')) {
+                    modifications.push({
+                        field: 'endDate',
+                        originalValue: t.end || '',
+                        newValue: editForm.endDate
+                    });
+                }
+                if (editForm.url !== (t.url || '')) {
+                    modifications.push({
+                        field: 'url',
+                        originalValue: t.url || '',
+                        newValue: editForm.url
                     });
                 }
 
@@ -450,17 +563,13 @@ function TournamentsContent() {
                             <span className="text-[9px] font-medium text-emerald-400/70 dark:text-emerald-500/70">{startDate.year}</span>
                         </div>
 
-                        {!isSameDay && (
-                            <>
-                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                {/* End Date */}
-                                <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
-                                    <span className="text-xl font-black leading-none text-rose-600 dark:text-rose-400">{endDate.day}</span>
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{endDate.month}</span>
-                                    <span className="text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{endDate.year}</span>
-                                </div>
-                            </>
-                        )}
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        {/* End Date */}
+                        <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
+                            <span className="text-xl font-black leading-none text-rose-600 dark:text-rose-400">{endDate.day}</span>
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{endDate.month}</span>
+                            <span className="text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{endDate.year}</span>
+                        </div>
                     </div>
 
                     {/* Separator */}
@@ -506,12 +615,6 @@ function TournamentsContent() {
                             )}
                             {((t.tempo || '').toLowerCase().includes('standard') || (t.tempo || '').toLowerCase().includes('clásico') || (!(t.tempo || '').toLowerCase().includes('blitz') && !(t.tempo || '').toLowerCase().includes('rapid'))) && (
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>
-                            )}
-                            {(t.rounds || (details?.rounds)) && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 flex items-center gap-1">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                    {(t.rounds || details?.rounds)?.replace('Rounds', '')?.replace('Rondas', '')?.trim()} Rds
-                                </span>
                             )}
                         </div>
                     </div>
@@ -603,8 +706,10 @@ function TournamentsContent() {
                                                 3. If NO URL but Lat/Lng exist -> Show DB Coords (Automatic/Original)
                                             */}
                                             {(() => {
-                                                const url = details.location && details.location.includes('http') ? details.location : null;
+                                                const url = details.mapsUrl || (details.location && details.location.includes('http') ? details.location : null);
                                                 let mapSrc = null;
+
+                                                const hasValidCoords = details.lat && details.lng && !isNaN(Number(details.lat)) && !isNaN(Number(details.lng)) && Number(details.lat) !== 0 && Number(details.lng) !== 0;
 
                                                 if (url) {
                                                     // Try to extract coords from @lat,lng
@@ -613,12 +718,33 @@ function TournamentsContent() {
                                                     const queryMatch = url.match(/[?&]q=([^&]+)/);
                                                     // Try to extract place name from /place/NAME/...
                                                     const placeMatch = url.match(/\/maps\/place\/([^/]+)/);
+                                                    // Try to extract data from /data=...!3d{lat}!4d{lng}
+                                                    const dataMatch = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
 
                                                     if (coordsMatch) {
-                                                        mapSrc = `https://www.google.com/maps?q=${coordsMatch[1]},${coordsMatch[2]}&output=embed&z=15`;
+                                                        mapSrc = `https://maps.google.com/maps?q=${coordsMatch[1]},${coordsMatch[2]}&z=15&output=embed`;
+                                                    } else if (dataMatch) {
+                                                        mapSrc = `https://maps.google.com/maps?q=${dataMatch[1]},${dataMatch[2]}&z=15&output=embed`;
                                                     } else if (placeMatch) {
-                                                        mapSrc = `https://www.google.com/maps?q=${placeMatch[1]}&output=embed&z=15`;
+                                                        const place = decodeURIComponent(placeMatch[1]);
+                                                        mapSrc = `https://maps.google.com/maps?q=${encodeURIComponent(place)}&z=15&output=embed`;
+                                                    } else if (queryMatch) {
+                                                        const query = decodeURIComponent(queryMatch[1]);
+                                                        mapSrc = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=15&output=embed`;
+                                                    } else if (hasValidCoords) {
+                                                        // URL exists but couldn't parse, use DB coords
+                                                        mapSrc = `https://maps.google.com/maps?q=${details.lat},${details.lng}&z=15&output=embed`;
                                                     }
+                                                }
+
+                                                // Fallback: If we have valid DB coordinates, use them
+                                                if (!mapSrc && hasValidCoords) {
+                                                    mapSrc = `https://maps.google.com/maps?q=${details.lat},${details.lng}&z=15&output=embed`;
+                                                }
+
+                                                // Fallback: If we have a location string that IS NOT a URL (e.g. "Hotel Melia, Alicante"), try to map it
+                                                if (!mapSrc && details.location && !details.location.startsWith('http')) {
+                                                    mapSrc = `https://maps.google.com/maps?q=${encodeURIComponent(details.location)}&z=15&output=embed`;
                                                 }
 
                                                 if (mapSrc) {
@@ -635,13 +761,13 @@ function TournamentsContent() {
                                                                 ></iframe>
                                                             </div>
                                                             <a
-                                                                href={url || `https://www.google.com/maps/search/?api=1&query=${details.lat},${details.lng}`}
+                                                                href={url || `https://www.google.com/maps/search/?api=1&query=${hasValidCoords ? `${details.lat},${details.lng}` : encodeURIComponent(details.location || '')}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="flex items-center justify-center gap-2 w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition shadow-sm"
                                                             >
                                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                                {url ? 'View Location' : 'Open in Google Maps'}
+                                                                {url ? 'Open in Google Maps' : 'View Location'}
                                                             </a>
                                                         </div>
                                                     );
@@ -683,8 +809,15 @@ function TournamentsContent() {
                                     </div>
                                 </div>
 
-                                {/* Suggest Edit Button */}
-                                <div className="flex justify-end pt-4 border-t border-neutral-200 dark:border-neutral-700">
+                                {/* Suggest Buttons */}
+                                <div className="flex justify-end pt-4 border-t border-neutral-200 dark:border-neutral-700 gap-2">
+                                    <button
+                                        onClick={openDeleteModal}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:hover:bg-rose-900/30 font-semibold text-sm transition"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        Suggest Delete
+                                    </button>
                                     <button
                                         onClick={openEditModal}
                                         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30 font-semibold text-sm transition"
@@ -728,112 +861,141 @@ function TournamentsContent() {
                                         Suggest corrections or updates for <strong className="text-neutral-900 dark:text-white">{t.name}</strong>
                                     </p>
 
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Tournament Name</label>
-                                            <input
-                                                type="text"
-                                                value={editForm.name}
-                                                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
+                                    <div className="space-y-6">
+                                        {/* Section 1: Basic Info */}
+                                        <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                                            <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                Basic Info
+                                            </h4>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Tournament Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.name}
+                                                        onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                                                        className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <CityCombobox value={editForm.city} onChange={(val) => setEditForm({ ...editForm, city: val })} />
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Location (Google Maps Link)</label>
-                                            <input
-                                                type="url"
-                                                value={editForm.location}
-                                                onChange={e => setEditForm({ ...editForm, location: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                                placeholder="https://maps.app.goo.gl/..."
-                                            />
+                                        {/* Section 2: Schedule & Format */}
+                                        <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                                            <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                Format & Schedule
+                                            </h4>
+                                            <div className="space-y-3">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Start Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={editForm.startDate}
+                                                            onChange={e => setEditForm({ ...editForm, startDate: e.target.value })}
+                                                            className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">End Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={editForm.endDate}
+                                                            onChange={e => setEditForm({ ...editForm, endDate: e.target.value })}
+                                                            className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Time Control</label>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {['Standard', 'Rapid', 'Blitz'].map((type) => (
+                                                            <button
+                                                                key={type}
+                                                                type="button"
+                                                                onClick={() => setEditForm({ ...editForm, tempo: type })}
+                                                                className={`py-2 px-1 text-sm font-semibold rounded-lg border transition-all ${editForm.tempo === type
+                                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md transform scale-105'
+                                                                    : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50'
+                                                                    }`}
+                                                            >
+                                                                {type}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        <div>
-                                            <CityCombobox
-                                                value={editForm.city}
-                                                onChange={(val) => setEditForm({ ...editForm, city: val })}
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Poster Image</label>
-                                            <input
-                                                type="file"
-                                                accept="image/*"
-                                                ref={posterInputRef}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Regulations (PDF)</label>
-                                            <input
-                                                type="file"
-                                                accept="application/pdf"
-                                                ref={regulationsInputRef}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-400"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Time Control</label>
-                                            <input
-                                                type="text"
-                                                value={editForm.timeControl}
-                                                onChange={e => setEditForm({ ...editForm, timeControl: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                                placeholder="e.g., 90 min + 30 seg"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Number of Rounds</label>
-                                            <input
-                                                type="text"
-                                                value={editForm.rounds}
-                                                onChange={e => setEditForm({ ...editForm, rounds: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                                placeholder="e.g., 9"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Notes (optional)</label>
-                                            <textarea
-                                                value={editForm.notes}
-                                                onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
-                                                rows={3}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                                                placeholder="Explain your suggested changes..."
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Your Email (optional)</label>
-                                            <input
-                                                type="email"
-                                                value={editForm.submitterEmail}
-                                                onChange={e => setEditForm({ ...editForm, submitterEmail: e.target.value })}
-                                                className="w-full px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                                placeholder="For follow-up questions"
-                                            />
+                                        {/* Section 3: Links & Media */}
+                                        <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                                            <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                                                Links & Media
+                                            </h4>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Chess-results URL</label>
+                                                    <input
+                                                        type="url"
+                                                        value={editForm.url}
+                                                        onChange={e => setEditForm({ ...editForm, url: e.target.value })}
+                                                        className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                        placeholder="https://chess-results.com/..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Location Link (Google Maps)</label>
+                                                    <input
+                                                        type="url"
+                                                        value={editForm.location}
+                                                        onChange={e => setEditForm({ ...editForm, location: e.target.value })}
+                                                        className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                                        placeholder="https://maps.google.com/..."
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                                                    <div className="relative">
+                                                        <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Poster Image</label>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            ref={posterInputRef}
+                                                            className="block w-full text-xs text-neutral-500 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                                        />
+                                                    </div>
+                                                    <div className="relative">
+                                                        <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Regulations PDF</label>
+                                                        <input
+                                                            type="file"
+                                                            accept="application/pdf"
+                                                            ref={regulationsInputRef}
+                                                            className="block w-full text-xs text-neutral-500 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex gap-3 mt-6">
+                                    <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-neutral-100 dark:border-neutral-800">
                                         <button
                                             type="button"
                                             onClick={() => setShowEditModal(false)}
-                                            className="flex-1 px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-700 transition"
+                                            className="px-4 py-2 text-neutral-600 dark:text-neutral-400 font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
                                             disabled={submitting}
-                                            className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                                            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-bold rounded-lg shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 flex items-center gap-2"
                                         >
                                             {submitting ? (
                                                 <>
@@ -841,6 +1003,68 @@ function TournamentsContent() {
                                                     Submitting...
                                                 </>
                                             ) : 'Submit Request'}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Modal */}
+                {showDeleteModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteModal(false)}>
+                        <div className="bg-white dark:bg-neutral-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+                            {submitSuccess ? (
+                                <div className="text-center py-6">
+                                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <svg className="w-8 h-8 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-2">Request Submitted!</h3>
+                                    <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">Your deletion request has been sent.</p>
+                                    <button
+                                        onClick={() => setShowDeleteModal(false)}
+                                        className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleSubmitDelete}>
+                                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-4 flex items-center gap-2 text-rose-600">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        Request Deletion
+                                    </h3>
+                                    <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+                                        Are you sure you want to suggest deleting <strong className="text-neutral-900 dark:text-white">{t.name}</strong>?
+                                    </p>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Reason</label>
+                                        <textarea
+                                            value={deleteReason}
+                                            onChange={e => setDeleteReason(e.target.value)}
+                                            rows={2}
+                                            className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-rose-500 shadow-sm resize-none"
+                                            placeholder="Duplicate, cancelled, spam..."
+                                            required
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-3 justify-end mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowDeleteModal(false)}
+                                            className="px-4 py-2 text-neutral-600 dark:text-neutral-400 font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={submitting}
+                                            className="px-4 py-2 bg-rose-600 text-white font-bold rounded-lg shadow-lg hover:bg-rose-700 hover:-translate-y-0.5 transition-all disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {submitting ? 'Sending...' : 'Report for Deletion'}
                                         </button>
                                     </div>
                                 </form>
@@ -970,6 +1194,65 @@ function TournamentsContent() {
                     </div>
                 ) : (
                     <>
+                        {/* Tournament Counts */}
+                        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+                            {[
+                                {
+                                    label: 'Standard',
+                                    count: [...active, ...future, ...past].filter(t => (t.tempo || '').toLowerCase().includes('standard') || (t.tempo || '').toLowerCase().includes('clásico') || (!(t.tempo || '').toLowerCase().includes('rapid') && !(t.tempo || '').toLowerCase().includes('blitz'))).length,
+                                    borderColor: 'border-blue-600 dark:border-blue-400',
+                                    textColor: 'text-blue-600 dark:text-blue-400',
+                                    bgHover: 'bg-blue-500/5 group-hover:bg-blue-500/10',
+                                    subTextColor: 'text-blue-600/70 dark:text-blue-400/70',
+                                    icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'
+                                },
+                                {
+                                    label: 'Rapid',
+                                    count: [...active, ...future, ...past].filter(t => (t.tempo || '').toLowerCase().includes('rapid')).length,
+                                    borderColor: 'border-emerald-600 dark:border-emerald-400',
+                                    textColor: 'text-emerald-600 dark:text-emerald-400',
+                                    bgHover: 'bg-emerald-500/5 group-hover:bg-emerald-500/10',
+                                    subTextColor: 'text-emerald-600/70 dark:text-emerald-400/70',
+                                    icon: 'M13 10V3L4 14h7v7l9-11h-7z'
+                                },
+                                {
+                                    label: 'Blitz',
+                                    count: [...active, ...future, ...past].filter(t => (t.tempo || '').toLowerCase().includes('blitz')).length,
+                                    borderColor: 'border-amber-600 dark:border-amber-400',
+                                    textColor: 'text-amber-600 dark:text-amber-400',
+                                    bgHover: 'bg-amber-500/5 group-hover:bg-amber-500/10',
+                                    subTextColor: 'text-amber-600/70 dark:text-amber-400/70',
+                                    icon: 'M13 10V3L4 14h7v7l9-11h-7z'
+                                }
+                            ].map((stat) => {
+                                const isActive = selectedTypes.has(stat.label);
+                                return (
+                                    <button
+                                        key={stat.label}
+                                        onClick={() => {
+                                            const newSet = new Set(selectedTypes);
+                                            if (newSet.has(stat.label)) {
+                                                newSet.delete(stat.label);
+                                            } else {
+                                                newSet.add(stat.label);
+                                            }
+                                            setSelectedTypes(newSet);
+                                        }}
+                                        className={`bg-white dark:bg-neutral-800/50 rounded-xl border-2 p-3 flex flex-col items-center justify-center shadow-sm relative overflow-hidden group transition-all duration-200 ${isActive ? stat.borderColor : 'border-neutral-200 dark:border-neutral-700 opacity-60 hover:opacity-100'}`}
+                                    >
+                                        <div className={`absolute inset-0 transition-colors ${isActive ? stat.bgHover : 'bg-transparent'}`}></div>
+                                        <span className={`text-2xl sm:text-3xl font-black mb-1 ${isActive ? stat.textColor : 'text-neutral-400'}`}>
+                                            {stat.count}
+                                        </span>
+                                        <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${isActive ? stat.subTextColor : 'text-neutral-400'}`}>
+                                            {stat.label === 'Blitz' && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+                                            {stat.label}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
                         {active.length === 0 && future.length === 0 && past.length === 0 && (
                             <div className="text-center py-20 bg-white dark:bg-neutral-800/30 rounded-2xl border border-neutral-200 dark:border-neutral-800 border-dashed">
                                 <p className="text-lg text-neutral-500 font-medium">No tournaments found with these criteria.</p>
@@ -1028,12 +1311,6 @@ function TournamentsContent() {
                                             <div className="grid grid-cols-1 gap-3">
                                                 <div>
                                                     <CityCombobox value={addForm.city} onChange={(val) => setAddForm({ ...addForm, city: val })} />
-                                                    {/* We can add a visual label asterisk inside CityCombobox if needed, or wrap it. 
-                                                        Currently CityCombobox has its own label. Let's assume user knows city is required or validation catches it.
-                                                        Actually, let's wrap it to show validation error state if needed, but simple alert is fine for now. 
-                                                        Let's just update the CityCombobox existing label if possible, or add a fake label above it?
-                                                        CityCombobox has absolute label. Let's stick to validation check for City.
-                                                    */}
                                                 </div>
                                             </div>
                                         </div>
@@ -1138,35 +1415,7 @@ function TournamentsContent() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-4 mt-6">
-                                    <div className="bg-neutral-50 dark:bg-neutral-900/50 p-4 rounded-xl border border-neutral-100 dark:border-neutral-800">
-                                        <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">Final Details</h4>
-                                        <div className="space-y-3">
-                                            <div>
-                                                <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Additional Notes</label>
-                                                <textarea
-                                                    rows={2}
-                                                    value={addForm.notes}
-                                                    onChange={e => setAddForm({ ...addForm, notes: e.target.value })}
-                                                    className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
-                                                    placeholder="Any other details..."
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">Your Email (required)</label>
-                                                <input
-                                                    type="email"
-                                                    required
-                                                    value={addForm.submitterEmail}
-                                                    onChange={e => setAddForm({ ...addForm, submitterEmail: e.target.value })}
-                                                    className="w-full rounded-lg border-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 focus:ring-2 focus:ring-blue-500 shadow-sm"
-                                                    placeholder="We'll notify you when it's added"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* Final Details removed */}
 
                                 <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-neutral-100 dark:border-neutral-800">
                                     <button

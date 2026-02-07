@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
             // Map modifications
             modificationData.modifications.forEach((mod: any) => {
                 let dbField = mod.field;
-                if (mod.field === 'timeControl') dbField = 'tempo';
+                // if (mod.field === 'timeControl') dbField = 'tempo'; // REMOVED: timeControl is its own field (text), tempo is the category
                 updates[dbField] = mod.newValue;
                 modifiedFields.push(dbField);
             });
