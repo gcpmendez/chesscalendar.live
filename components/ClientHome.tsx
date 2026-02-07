@@ -103,7 +103,7 @@ export default function ClientHome() {
 
 
             <main className="relative flex flex-col items-center gap-4 text-center max-w-2xl w-full">
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-70px] sm:mb-[-95px] w-[240px] h-[240px] sm:w-[420px] sm:h-[420px] pointer-events-none">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-50px] sm:mb-[-95px] w-[240px] h-[240px] sm:w-[420px] sm:h-[420px] pointer-events-none">
                     <Image
                         src="/logo.png"
                         alt="Chess Calendar"
