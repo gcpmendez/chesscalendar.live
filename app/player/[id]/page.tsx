@@ -198,21 +198,21 @@ export default function PlayerPage() {
         const isSameDay = start === end;
 
         return (
-            <div className="flex-shrink-0 flex items-center gap-1">
+            <div className="flex-shrink-0 flex flex-col sm:flex-row items-center gap-1 sm:gap-1.5">
                 {s && (
-                    <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 dark:from-emerald-500/20 dark:to-emerald-500/5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 shadow-sm">
-                        <span className="text-xl font-black leading-none text-emerald-600 dark:text-emerald-400">{s.day}</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-500/80 dark:text-emerald-400/80">{s.month}</span>
-                        <span className="text-[9px] font-medium text-emerald-400/70 dark:text-emerald-500/70">{s.year}</span>
+                    <div className="flex flex-col items-center justify-center w-12 sm:w-14 h-[50px] sm:h-[58px] bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 dark:from-emerald-500/20 dark:to-emerald-500/5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 shadow-sm">
+                        <span className="text-lg sm:text-xl font-black leading-none text-emerald-600 dark:text-emerald-400">{s.day}</span>
+                        <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-emerald-500/80 dark:text-emerald-400/80">{s.month}</span>
+                        <span className="text-[8px] sm:text-[9px] font-medium text-emerald-400/70 dark:text-emerald-500/70">{s.year}</span>
                     </div>
                 )}
-                {(!isSameDay && e) && (
+                {e && (
                     <>
-                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
-                            <span className="text-xl font-black leading-none text-rose-600 dark:text-rose-400">{e.day}</span>
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{e.month}</span>
-                            <span className="text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{e.year}</span>
+                        <svg className="w-3 h-3 sm:w-4 sm:h-4 text-neutral-400 rotate-90 sm:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        <div className="flex flex-col items-center justify-center w-12 sm:w-14 h-[50px] sm:h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
+                            <span className="text-lg sm:text-xl font-black leading-none text-rose-600 dark:text-rose-400">{e.day}</span>
+                            <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{e.month}</span>
+                            <span className="text-[8px] sm:text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{e.year}</span>
                         </div>
                     </>
                 )}
@@ -327,7 +327,7 @@ export default function PlayerPage() {
                                                         href={t.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition truncate block tracking-tight"
+                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
                                                         {t.name}
@@ -451,7 +451,7 @@ export default function PlayerPage() {
                                                         href={t.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition truncate block tracking-tight"
+                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
                                                         {t.name}
@@ -559,7 +559,7 @@ export default function PlayerPage() {
                                                 href={t.url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-lg font-semibold text-neutral-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition truncate block tracking-tight"
+                                                className="text-lg font-semibold text-neutral-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition break-words leading-snug block"
                                             >
                                                 {t.name}
                                             </a>

@@ -554,20 +554,20 @@ function TournamentsContent() {
                     onClick={handleExpand}
                 >
                     {/* Date Badge - Eye-catching visual */}
-                    <div className="flex-shrink-0 flex items-center gap-1">
+                    <div className="flex-shrink-0 flex flex-col sm:flex-row items-center gap-1 sm:gap-1.5">
                         {/* Start Date */}
-                        <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 dark:from-emerald-500/20 dark:to-emerald-500/5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 shadow-sm">
-                            <span className="text-xl font-black leading-none text-emerald-600 dark:text-emerald-400">{startDate.day}</span>
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-500/80 dark:text-emerald-400/80">{startDate.month}</span>
-                            <span className="text-[9px] font-medium text-emerald-400/70 dark:text-emerald-500/70">{startDate.year}</span>
+                        <div className="flex flex-col items-center justify-center w-12 sm:w-14 h-[50px] sm:h-[58px] bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 dark:from-emerald-500/20 dark:to-emerald-500/5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 shadow-sm">
+                            <span className="text-lg sm:text-xl font-black leading-none text-emerald-600 dark:text-emerald-400">{startDate.day}</span>
+                            <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-emerald-500/80 dark:text-emerald-400/80">{startDate.month}</span>
+                            <span className="text-[8px] sm:text-[9px] font-medium text-emerald-400/70 dark:text-emerald-500/70">{startDate.year}</span>
                         </div>
 
-                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        {/* End Date */}
-                        <div className="flex flex-col items-center justify-center w-14 h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
-                            <span className="text-xl font-black leading-none text-rose-600 dark:text-rose-400">{endDate.day}</span>
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{endDate.month}</span>
-                            <span className="text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{endDate.year}</span>
+                        {/* End Date - Only show if different OR if user wants symmetry (always show if available) */}
+                        <svg className="w-3 h-3 sm:w-4 sm:h-4 text-neutral-400 rotate-90 sm:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        <div className="flex flex-col items-center justify-center w-12 sm:w-14 h-[50px] sm:h-[58px] bg-gradient-to-br from-rose-500/15 to-rose-500/5 dark:from-rose-500/20 dark:to-rose-500/5 rounded-xl border border-rose-200 dark:border-rose-800/50 shadow-sm">
+                            <span className="text-lg sm:text-xl font-black leading-none text-rose-600 dark:text-rose-400">{endDate.day}</span>
+                            <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-rose-500/80 dark:text-rose-400/80">{endDate.month}</span>
+                            <span className="text-[8px] sm:text-[9px] font-medium text-rose-400/70 dark:text-rose-500/70">{endDate.year}</span>
                         </div>
                     </div>
 
@@ -581,7 +581,7 @@ function TournamentsContent() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="font-bold text-neutral-900 dark:text-gray-100 break-words hover:text-blue-600 dark:hover:text-blue-400 transition leading-tight"
+                                className="font-bold text-neutral-900 dark:text-gray-100 break-words hover:text-blue-600 dark:hover:text-blue-400 transition leading-snug"
                             >
                                 {t.name}
                             </a>
