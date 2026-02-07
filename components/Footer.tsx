@@ -16,10 +16,10 @@ export default function Footer() {
                 <p>
                     If you have any suggestions or find any bugs, please email me at{" "}
                     <a
-                        href="mailto:chess.ratings.live@gmail.com"
+                        href="mailto:chess.calendar.live@gmail.com"
                         className="text-blue-400 hover:text-blue-300 transition-colors"
                     >
-                        chess.ratings.live@gmail.com
+                        chess.calendar.live@gmail.com
                     </a>
                 </p>
             </div>

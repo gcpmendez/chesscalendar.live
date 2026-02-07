@@ -581,13 +581,25 @@ function TournamentsContent() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="font-bold text-neutral-900 dark:text-gray-100 truncate hover:text-blue-600 dark:hover:text-blue-400 transition"
+                                className="font-bold text-neutral-900 dark:text-gray-100 break-words hover:text-blue-600 dark:hover:text-blue-400 transition leading-tight"
                             >
                                 {t.name}
                             </a>
 
+
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-500 dark:text-neutral-400">
+                            {(t.tempo || '').toLowerCase().includes('blitz') && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">BLITZ</span>
+                            )}
+                            {(t.tempo || '').toLowerCase().includes('rapid') && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">RAPID</span>
+                            )}
+                            {((t.tempo || '').toLowerCase().includes('standard') || (t.tempo || '').toLowerCase().includes('clásico') || (!(t.tempo || '').toLowerCase().includes('blitz') && !(t.tempo || '').toLowerCase().includes('rapid'))) && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>
+                            )}
                             {/* Resource Icons */}
-                            <div className="flex items-center gap-1.5 ml-1">
+                            <div className="flex items-center gap-1.5 ml-2">
                                 {t.posterImage && (
                                     <span title="Poster available" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -604,17 +616,6 @@ function TournamentsContent() {
                                     </span>
                                 ) : null}
                             </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-500 dark:text-neutral-400">
-                            {(t.tempo || '').toLowerCase().includes('blitz') && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">BLITZ</span>
-                            )}
-                            {(t.tempo || '').toLowerCase().includes('rapid') && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">RAPID</span>
-                            )}
-                            {((t.tempo || '').toLowerCase().includes('standard') || (t.tempo || '').toLowerCase().includes('clásico') || (!(t.tempo || '').toLowerCase().includes('blitz') && !(t.tempo || '').toLowerCase().includes('rapid'))) && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>
-                            )}
                         </div>
                     </div>
 
@@ -1162,13 +1163,13 @@ function TournamentsContent() {
                 </div>
 
                 <div className="mb-8">
-                    <div className="flex justify-between items-center mb-2">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h1 className="text-3xl font-black flex items-center gap-3">
                             Tournaments
                         </h1>
                         <button
                             onClick={handleOpenAddModal}
-                            className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-transform shadow-lg flex items-center gap-2"
+                            className="w-full sm:w-auto bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-xl font-bold text-sm hover:scale-105 transition-transform shadow-lg flex items-center justify-center gap-2"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                             Add Tournament
