@@ -330,7 +330,6 @@ function TournamentsContent() {
                 notes: '',
                 submitterEmail: '',
                 startDate: t.start || '',
-                startDate: t.start || '',
                 endDate: t.end || '',
                 url: t.url || ''
             });
