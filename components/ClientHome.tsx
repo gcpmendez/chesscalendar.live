@@ -112,8 +112,8 @@ export default function ClientHome() {
                         priority
                     />
                 </div>
-                <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight flex items-start justify-center gap-2 pb-2">
-                    <span className="bg-gradient-to-r from-blue-600 to-emerald-600 dark:from-blue-400 dark:to-emerald-400 bg-clip-text text-transparent inline-block pb-4 -mb-4">
+                <h1 className="text-3xl sm:text-6xl font-extrabold tracking-tight flex items-start justify-center gap-2 pb-2 flex-nowrap">
+                    <span className="bg-gradient-to-r from-blue-600 to-emerald-600 dark:from-blue-400 dark:to-emerald-400 bg-clip-text text-transparent inline-block pb-4 -mb-4 whitespace-nowrap">
                         Chess Calendar
                     </span>
                     <span className="self-start -mt-1 px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-500 font-bold border border-rose-500/20 text-xs sm:text-base uppercase tracking-widest shadow-[0_0_15px_rgba(244,63,94,0.15)]">
