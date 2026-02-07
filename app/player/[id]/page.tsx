@@ -1,60 +1,55 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
-import RatingChart from "@/components/RatingChart";
+import { useEffect, useState } from "react";
+import Link from 'next/link';
 
-
-interface GameResult {
-    round: string;
-    opponentName: string;
-    opponentRating: number | null;
-    result: string;
-    change: number;
+interface ScrapedProfile {
+    name: string;
+    std: number;
+    rapid: number;
+    blitz: number;
+    fed?: string;
+    born?: number;
+    sex?: string;
+    title?: string;
+    maxStd?: number;
 }
 
-interface Tournament {
+interface TournamentChange {
     name: string;
     change: number;
-    url: string;
-    ratingType?: 'standard' | 'rapid' | 'blitz';
-    games?: GameResult[];
+    kFactor: number;
+    dateStr?: string;
     startDate?: string;
     endDate?: string;
-    rounds?: string;
-}
-
-interface RatingHistoryItem {
-    date: string;
-    rating: number | null;
-    rapid: number | null;
-    blitz: number | null;
+    url: string;
+    lastUpdate?: string;
+    games?: {
+        round: string;
+        opponentName: string;
+        opponentRating: number | null;
+        result: string;
+        change: number;
+    }[];
+    ratingType?: 'standard' | 'rapid' | 'blitz';
+    isPending?: boolean;
 }
 
 interface PlayerData {
-    profile: {
-        name: string;
-        std: number;
-        rapid: number;
-        blitz: number;
-        fed?: string;
-        born?: number;
-        sex?: string;
-        title?: string;
-    };
-    tournaments: Tournament[]; // Active
-    pendingTournaments?: Tournament[]; // Pending
-    nextTournaments?: Tournament[]; // Next
-    activeTournaments?: Tournament[]; // Explicit Active
-    history?: RatingHistoryItem[];
+    profile: ScrapedProfile;
+    history: { date: string, rating: number | null, rapid: number | null, blitz: number | null }[];
+    activeTournaments: TournamentChange[];
+    pendingTournaments: TournamentChange[];
+    nextTournaments: TournamentChange[];
     liveRating: number;
     liveRapid: number;
     liveBlitz: number;
     totalChange: number;
     rapidChange: number;
     blitzChange: number;
+    isStale?: boolean;
 }
 
 export default function PlayerPage() {
@@ -63,34 +58,60 @@ export default function PlayerPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [expandedTournaments, setExpandedTournaments] = useState<Set<string>>(new Set());
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isStale, setIsStale] = useState(false);
+
+    const fetchData = async (isBackground = false) => {
+        if (!isBackground) setLoading(true);
+        else setIsRefreshing(true);
+
+        try {
+            const res = await fetch(`/api/player/${id}?t=${Date.now()}`, { cache: 'no-store' });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to fetch');
+            }
+            const d = await res.json();
+            setData(d);
+            setIsStale(d.isStale || false);
+        } catch (e: any) {
+            if (!isBackground) setError(e.message);
+        } finally {
+            setLoading(false);
+            setIsRefreshing(false);
+        }
+    };
 
     useEffect(() => {
         if (!id) return;
-
-        fetch(`/api/player/${id}`, { cache: 'no-store' })
-            .then(async (res) => {
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'Failed to fetch');
-                }
-                return res.json();
-            })
-            .then((d) => {
-                setData(d);
-                setLoading(false);
-            })
-            .catch((e) => {
-                setError(e.message);
-                setLoading(false);
-            });
+        fetchData();
     }, [id]);
+
+    // Polling effect: if data is stale, check every 5 seconds
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (isStale && !isRefreshing) {
+            interval = setInterval(() => {
+                fetchData(true);
+            }, 5000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [isStale, isRefreshing, id]);
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center">
-                <div className="animate-pulse flex flex-col items-center">
-                    <div className="h-4 w-48 bg-neutral-800 rounded mb-4"></div>
-                    <p className="text-neutral-500">Calculating Live Ratings...</p>
+            <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center font-sans">
+                <div className="flex flex-col items-center gap-6">
+                    <div className="relative w-16 h-16">
+                        <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                        <p className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Loading Profile</p>
+                        <p className="text-neutral-500 text-sm animate-pulse">Fetching global chess data...</p>
+                    </div>
                 </div>
             </div>
         );
@@ -98,103 +119,58 @@ export default function PlayerPage() {
 
     if (error) {
         return (
-            <div className="min-h-screen bg-neutral-900 text-white flex flex-col items-center justify-center gap-4">
-                <p className="text-red-400 text-xl">Error: {error}</p>
-                <Link href="/" className="px-4 py-2 bg-neutral-800 rounded hover:bg-neutral-700 transition">
-                    Go Back
-                </Link>
+            <div className="min-h-screen bg-neutral-900 text-white flex flex-col items-center justify-center gap-4 font-sans p-4 text-center">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mb-2 border border-rose-500/20">
+                    <svg className="w-8 h-8 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <h2 className="text-2xl font-bold text-white">Oops! Something went wrong</h2>
+                <p className="text-neutral-400 max-w-md">{error}</p>
+                <div className="flex gap-4 mt-4">
+                    <button onClick={() => fetchData()} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95">
+                        Try Again
+                    </button>
+                    <Link href="/" className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl font-bold transition-all">
+                        Go Home
+                    </Link>
+                </div>
             </div>
         );
     }
 
     if (!data) return null;
 
-    // For now we assume all changes affect Standard rating unless we parse otherwise.
-    // In the future we should distinguish rating types in the scraper.
-    const { profile, tournaments, activeTournaments, pendingTournaments, nextTournaments, liveRating, liveRapid, liveBlitz, totalChange, rapidChange, blitzChange } = data;
+    const { profile, activeList, pendingList, nextList, liveRating, liveRapid, liveBlitz, totalChange, rapidChange, blitzChange } = (() => {
+        const activeList = data.activeTournaments || [];
+        const pendingList = data.pendingTournaments || [];
+        const nextList = data.nextTournaments || [];
+        return { ...data, activeList, pendingList, nextList };
+    })();
 
-    // Use explicit list if available, fallback to 'tournaments' (which might be mixed if API wasn't updated, but we updated it)
-    const activeList = activeTournaments || tournaments;
-    const pendingList = pendingTournaments || [];
-    const nextList = nextTournaments || [];
-
-    // Use API values
-
-
-    const RatingCard = ({ title, live, official, change, color }: { title: string, live: number, official: number, change: number, color: 'blue' | 'emerald' | 'yellow' }) => {
-        const colorMap = {
-            blue: {
-                border: 'hover:border-blue-500/30',
-                glow: 'from-blue-500/10',
-                bar: 'bg-blue-500'
-            },
-            emerald: {
-                border: 'hover:border-emerald-500/30',
-                glow: 'from-emerald-500/10',
-                bar: 'bg-emerald-500'
-            },
-            yellow: {
-                border: 'hover:border-yellow-500/30',
-                glow: 'from-yellow-500/10',
-                bar: 'bg-yellow-500'
-            }
-        };
-
-        const theme = colorMap[color];
-
-        return (
-            <div className={`bg-white dark:bg-neutral-800 rounded-xl p-6 border border-neutral-200 dark:border-neutral-700 relative overflow-hidden group ${theme.border} transition-all duration-700 ease-in-out hover:duration-200 shadow-xl dark:shadow-none`}>
-                <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${theme.glow} to-transparent rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none`}></div>
-
-                <div className="flex items-center gap-2 mb-4">
-                    <span className={`w-1 h-4 ${theme.bar} rounded-full`}></span>
-                    <h3 className="text-neutral-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">{title}</h3>
-                </div>
-
-                <div className="flex flex-col gap-1 mb-6">
-                    <span className="text-sm text-neutral-500 dark:text-gray-500 font-medium">Live Rating</span>
-                    <div className="flex items-baseline gap-3">
-                        <span className="text-4xl font-extrabold text-neutral-900 dark:text-white">{live.toFixed(1)}</span>
-                        {change !== 0 && (
-                            <span className={`text-lg font-bold ${change > 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
-                                {change > 0 ? '+' : ''}{change.toFixed(1)}
-                            </span>
-                        )}
-                    </div>
-                </div>
-
-                <div className="pt-4 border-t border-neutral-100 dark:border-neutral-700/50 flex justify-between items-center bg-neutral-50 dark:bg-neutral-900/40 -mx-6 -mb-6 px-6 py-4">
-                    <span className="text-sm text-neutral-500 dark:text-gray-400">Official</span>
-                    <span className="text-lg font-mono font-bold text-neutral-700 dark:text-gray-200">{official}</span>
-                </div>
-            </div>
-        );
+    const toggleExpand = (tourneyName: string) => {
+        const next = new Set(expandedTournaments);
+        if (next.has(tourneyName)) next.delete(tourneyName);
+        else next.add(tourneyName);
+        setExpandedTournaments(next);
     };
 
-    const toggleTournament = (name: string) => {
-        setExpandedTournaments(prev => {
-            const next = new Set(prev);
-            if (next.has(name)) next.delete(name);
-            else next.add(name);
-            return next;
-        });
-    };
-
-    const parseDateHelper = (dateStr?: string) => {
+    const parseDate = (dateStr?: string) => {
         if (!dateStr) return null;
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return null;
-        return {
-            day: d.getDate(),
-            month: d.toLocaleString('es', { month: 'short' }).toUpperCase(),
-            year: d.getFullYear()
-        };
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return null;
+            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            return {
+                day: d.getDate().toString().padStart(2, '0'),
+                month: months[d.getMonth()],
+                year: d.getFullYear()
+            };
+        } catch { return null; }
     };
 
     const DateBadge = ({ start, end }: { start?: string, end?: string }) => {
-        if (!start && !end) return null;
-        const s = parseDateHelper(start);
-        const e = parseDateHelper(end);
+        const s = parseDate(start);
+        const e = parseDate(end);
+        if (!s && !e) return null;
         const isSameDay = start === end;
 
         return (
@@ -221,368 +197,259 @@ export default function PlayerPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0a] text-neutral-900 dark:text-neutral-100 p-4 sm:p-8 font-sans transition-colors duration-300">
-            <div className="max-w-5xl mx-auto">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-12">
-                    <Link href="/" className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition flex items-center gap-2 group order-2 sm:order-1">
-                        <svg className="w-5 h-5 group-hover:-translate-x-1 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        <span className="text-sm sm:text-base font-medium">Search another player</span>
-                    </Link>
-                    <Link href="/" className="hover:opacity-80 transition block w-32 h-32 sm:w-40 sm:h-40 relative order-1 sm:order-2">
-                        <Image
-                            src="/logo.png"
-                            alt="Chess Calendar"
-                            fill
-                            className="object-contain dark:invert-0"
-                        />
-                    </Link>
+        <div className="min-h-screen bg-[#F8FAFC] dark:bg-neutral-950 font-sans pb-20">
+            {/* Syncing Badge */}
+            {isRefreshing && (
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4">
+                    <div className="bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md border border-blue-200 dark:border-blue-800/50 px-4 py-2 rounded-full shadow-2xl flex items-center gap-3">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
+                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 tracking-widest uppercase">Syncing Live Data...</span>
+                    </div>
                 </div>
+            )}
 
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
-                    <div>
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-start gap-1 flex-wrap">
-                                <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-neutral-900 dark:text-white tracking-tight leading-tight">{profile.name}</h1>
+            {/* Header / Stats Section */}
+            <div className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 pt-12 pb-12 shadow-sm relative overflow-hidden">
+                <div className="max-w-6xl mx-auto px-4 relative z-10">
+                    <Link href="/" className="inline-flex items-center text-sm font-bold text-neutral-500 hover:text-blue-600 transition mb-8 uppercase tracking-widest gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                        Back to Search
+                    </Link>
+
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-[10px] font-black tracking-[0.2em] uppercase rounded-full">FIDE Profile</span>
                                 {profile.title && (
-                                    <span className="self-start -mt-2 ml-2 px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 font-bold border border-yellow-500/20 text-xs md:text-sm shadow-glow-sm">
-                                        {profile.title}
-                                    </span>
+                                    <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-[0.2em] uppercase rounded-full">{profile.title}</span>
                                 )}
                             </div>
-
-                            <div className="flex items-center gap-4 text-neutral-500 dark:text-neutral-400 font-mono text-sm md:text-base flex-wrap">
+                            <h1 className="text-4xl md:text-5xl font-black text-neutral-900 dark:text-white tracking-tight leading-none mb-4">{profile.name}</h1>
+                            <div className="flex items-center gap-6 text-neutral-500 font-bold uppercase tracking-wider text-sm">
                                 <div className="flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    FIDE ID: {id}
+                                    <span className="text-xs text-neutral-400 font-medium tracking-normal">Federation</span>
+                                    {profile.fed}
                                 </div>
-
-                                {profile.fed && (
-                                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm dark:shadow-none">
-                                        <span className="text-neutral-400 dark:text-neutral-500">FED:</span>
-                                        <span className="text-neutral-700 dark:text-white font-bold">{profile.fed}</span>
-                                    </div>
-                                )}
-
-                                {profile.born && (
-                                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm dark:shadow-none">
-                                        <span className="text-neutral-400 dark:text-neutral-500">BORN:</span>
-                                        <span className="text-neutral-700 dark:text-white font-bold">{profile.born}</span>
-                                    </div>
-                                )}
-
-                                {profile.sex && (
-                                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm dark:shadow-none">
-                                        <span className="text-neutral-400 dark:text-neutral-500">SEX:</span>
-                                        <span className="text-neutral-700 dark:text-white font-bold">{profile.sex}</span>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-neutral-400 font-medium tracking-normal">Born</span>
+                                    {profile.born || 'N/A'}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* Ratings Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                    <RatingCard title="Classical" live={liveRating} official={profile.std} change={totalChange} color="blue" />
-                    <RatingCard title="Rapid" live={liveRapid} official={profile.rapid} change={rapidChange} color="emerald" />
-                    <RatingCard title="Blitz" live={liveBlitz} official={profile.blitz} change={blitzChange} color="yellow" />
-                </div>
-
-                {/* Rating Chart */}
-                {data.history && data.history.length > 0 && (
-                    <div className="mb-12">
-                        <RatingChart data={data.history} />
-                    </div>
-                )}
-
-                {/* Past Tournaments List */}
-                {pendingList.length > 0 && (
-                    <div className="mb-12">
-                        <h2 className="text-2xl font-bold mb-6 text-neutral-900 dark:text-white flex items-center gap-3">
-                            Past Tournaments
-                            <span className="text-xs font-bold text-white bg-neutral-900 dark:text-black dark:bg-white px-2 py-1 rounded-full">{pendingList.length}</span>
-                        </h2>
-                        <div className="grid gap-6">
-                            {pendingList.map((t, i) => {
-                                const isExpanded = expandedTournaments.has(t.name);
-                                const hasGames = !!(t.games && t.games.filter(g => g.change !== 0).length > 0);
-
-                                return (
-                                    <div
-                                        key={i}
-                                        className="bg-white dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-sm dark:shadow-none transition-all duration-300 relative group"
-                                    >
-                                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-[10px] font-bold text-amber-600 dark:text-amber-400 rounded-b-lg border-b border-x border-amber-200 dark:border-amber-800/50 shadow-sm z-10">
-                                            PENDING FIDE
-                                        </div>
-                                        <div
-                                            className={`p-4 sm:p-5 flex justify-between items-center gap-4 transition-colors ${hasGames ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-white/[0.02]' : ''}`}
-                                            onClick={() => hasGames && toggleTournament(t.name)}
-                                        >
-                                            <div className="flex items-center gap-4 min-w-0 flex-1">
-                                                <DateBadge start={t.startDate} end={t.endDate} />
-                                                <div className="h-10 w-px bg-neutral-200 dark:bg-neutral-700/50 mx-2 hidden sm:block"></div>
-                                                <div className="min-w-0 flex-1">
-                                                    <a
-                                                        href={t.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        {t.name}
-                                                    </a>
-                                                    <div className="mt-1 text-sm text-neutral-500 flex items-center gap-2">
-                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-200 dark:border-rose-800 tracking-wider uppercase">Live</span>
-                                                        {t.ratingType === 'rapid' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">RAPID</span>}
-                                                        {t.ratingType === 'blitz' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">BLITZ</span>}
-                                                        {(t.ratingType === 'standard' || !t.ratingType) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>}
-                                                        {t.rounds && (
-                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 flex items-center gap-1">
-                                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                                                {t.rounds.replace('Rounds', '')?.replace('Rondas', '')?.trim()} Rds
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                {hasGames && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleTournament(t.name);
-                                                        }}
-                                                        className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition shrink-0 opacity-0 group-hover:opacity-100"
-                                                        title={isExpanded ? "Collapse" : "Expand"}
-                                                    >
-                                                        <svg
-                                                            className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                        </svg>
-                                                    </button>
-                                                )}
-                                                <div className={`px-4 py-2 rounded-lg font-mono font-bold text-lg min-w-[80px] text-center ${t.change >= 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
-                                                    {t.change > 0 ? '+' : ''}{t.change}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {hasGames && isExpanded && (
-                                            <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/30 animate-in slide-in-from-top-2 duration-300">
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-left text-sm">
-                                                        <thead>
-                                                            <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-500 uppercase text-xs">
-                                                                <th className="px-6 py-3 font-medium">Rd</th>
-                                                                <th className="px-6 py-3 font-medium">Opponent</th>
-                                                                <th className="px-6 py-3 font-medium">Rtg</th>
-                                                                <th className="px-6 py-3 font-medium">Res</th>
-                                                                <th className="px-6 py-3 font-medium text-right">Chg</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                                                            {t.games?.filter(g => g.change !== 0).map((g, gi) => (
-                                                                <tr key={gi} className="hover:bg-white dark:hover:bg-neutral-800/50 transition">
-                                                                    <td className="px-6 py-3 text-neutral-400">{g.round}</td>
-                                                                    <td className="px-6 py-3 font-medium text-neutral-700 dark:text-neutral-300">{g.opponentName}</td>
-                                                                    <td className="px-6 py-3 text-neutral-400">{g.opponentRating || '-'}</td>
-                                                                    <td className="px-6 py-3">
-                                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${g.result === '1' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                                                            g.result === '0' ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400' :
-                                                                                'bg-gray-500/20 text-gray-500 dark:text-gray-400'
-                                                                            }`}>
-                                                                            {g.result}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className={`px-6 py-3 text-right font-mono font-bold ${g.change > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                                        {g.change > 0 ? '+' : ''}{g.change}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
+                        <div className="grid grid-cols-3 gap-3 md:gap-6 bg-neutral-50 dark:bg-neutral-800/50 p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800">
+                            {[
+                                { label: 'Standard', live: liveRating, base: profile.std, change: totalChange },
+                                { label: 'Rapid', live: liveRapid, base: profile.rapid, change: rapidChange },
+                                { label: 'Blitz', live: liveBlitz, base: profile.blitz, change: blitzChange }
+                            ].map((stat, idx) => (
+                                <div key={idx} className="flex flex-col items-center">
+                                    <span className="text-[10px] font-black tracking-widest text-neutral-400 dark:text-neutral-500 uppercase mb-2">{stat.label}</span>
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-2xl md:text-3xl font-black text-neutral-900 dark:text-white leading-none">{stat.live || stat.base || '-'}</span>
+                                        {stat.change !== 0 && (
+                                            <span className={`text-[10px] font-black mt-1 ${stat.change > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                {stat.change > 0 ? '+' : ''}{stat.change.toFixed(1)}
+                                            </span>
                                         )}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                {/* Active Tournaments List */}
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 text-neutral-900 dark:text-white flex items-center gap-3">
-                        Active Tournaments
-                        {activeList.length > 0 && <span className="text-xs font-bold text-white bg-neutral-900 dark:text-black dark:bg-white px-2 py-1 rounded-full">{activeList.length}</span>}
-                    </h2>
-
-                    {activeList.length === 0 ? (
-                        <div className="bg-white dark:bg-neutral-900/50 p-12 rounded-2xl border-2 border-dashed border-neutral-200 dark:border-neutral-800 text-center">
-                            <p className="text-neutral-500 text-lg">No active tournament rating changes found.</p>
-                            <p className="text-neutral-400 dark:text-neutral-600 text-sm mt-2">Check back later for updates.</p>
-                        </div>
-                    ) : (
-                        <div className="grid gap-6">
-                            {activeList.map((t, i) => {
-                                const isExpanded = expandedTournaments.has(t.name);
-                                const hasGames = !!(t.games && t.games.filter(g => g.change !== 0).length > 0);
-
-                                return (
-                                    <div
-                                        key={i}
-                                        className="bg-white dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden shadow-sm dark:shadow-none transition-all duration-300 relative group"
-                                    >
-                                        <div
-                                            className={`p-4 sm:p-5 flex justify-between items-center gap-4 transition-colors ${hasGames ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-white/[0.02]' : ''}`}
-                                            onClick={() => hasGames && toggleTournament(t.name)}
-                                        >
-                                            <div className="flex items-center gap-4 min-w-0 flex-1">
-                                                <DateBadge start={t.startDate} end={t.endDate} />
-                                                <div className="h-10 w-px bg-neutral-200 dark:bg-neutral-700/50 mx-2 hidden sm:block"></div>
-                                                <div className="min-w-0 flex-1">
-                                                    <a
-                                                        href={t.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        {t.name}
-                                                    </a>
-                                                    <div className="mt-1 text-sm text-neutral-500 flex items-center gap-2">
-                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-200 dark:border-rose-800 tracking-wider uppercase">Live</span>
-                                                        {t.ratingType === 'rapid' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">RAPID</span>}
-                                                        {t.ratingType === 'blitz' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">BLITZ</span>}
-                                                        {(t.ratingType === 'standard' || !t.ratingType) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>}
-                                                        {t.rounds && (
-                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 flex items-center gap-1">
-                                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                                                {t.rounds.replace('Rounds', '')?.replace('Rondas', '')?.trim()} Rds
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                {hasGames && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleTournament(t.name);
-                                                        }}
-                                                        className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition shrink-0 opacity-0 group-hover:opacity-100"
-                                                        title={isExpanded ? "Collapse" : "Expand"}
-                                                    >
-                                                        <svg
-                                                            className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                        </svg>
-                                                    </button>
-                                                )}
-                                                <div className={`px-4 py-2 rounded-lg font-mono font-bold text-lg min-w-[80px] text-center ${t.change >= 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
-                                                    {t.change > 0 ? '+' : ''}{t.change}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Games Table */}
-                                        {hasGames && isExpanded && (
-                                            <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/30 animate-in slide-in-from-top-2 duration-300">
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-left text-sm">
-                                                        <thead>
-                                                            <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-500 uppercase text-xs">
-                                                                <th className="px-6 py-3 font-medium">Rd</th>
-                                                                <th className="px-6 py-3 font-medium">Opponent</th>
-                                                                <th className="px-6 py-3 font-medium">Rtg</th>
-                                                                <th className="px-6 py-3 font-medium">Res</th>
-                                                                <th className="px-6 py-3 font-medium text-right">Chg</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                                                            {t.games?.filter(g => g.change !== 0).map((g, gi) => (
-                                                                <tr key={gi} className="hover:bg-white dark:hover:bg-neutral-800/50 transition">
-                                                                    <td className="px-6 py-3 text-neutral-400">{g.round}</td>
-                                                                    <td className="px-6 py-3 font-medium text-neutral-700 dark:text-neutral-300">{g.opponentName}</td>
-                                                                    <td className="px-6 py-3 text-neutral-400">{g.opponentRating || '-'}</td>
-                                                                    <td className="px-6 py-3">
-                                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${g.result === '1' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                                                            g.result === '0' ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400' :
-                                                                                'bg-gray-500/20 text-gray-500 dark:text-gray-400'
-                                                                            }`}>
-                                                                            {g.result}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className={`px-6 py-3 text-right font-mono font-bold ${g.change > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                                        {g.change > 0 ? '+' : ''}{g.change}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-
-                {/* Next Tournaments List */}
-                {nextList.length > 0 && (
-                    <div className="mb-12">
-                        <h2 className="text-2xl font-bold mb-6 text-neutral-900 dark:text-white flex items-center gap-3">
-                            Next Tournaments
-                            <span className="text-xs font-bold text-white bg-neutral-900 dark:text-black dark:bg-white px-2 py-1 rounded-full">{nextList.length}</span>
-                        </h2>
-                        <div className="grid gap-4">
-                            {nextList.map((t, i) => (
-                                <div key={i} className="bg-white dark:bg-neutral-800/30 rounded-xl border border-neutral-200 dark:border-neutral-800 p-4 sm:p-5 flex justify-between items-center group hover:border-neutral-300 dark:hover:border-neutral-700 transition-all duration-300 shadow-sm dark:shadow-none">
-                                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                                        <DateBadge start={t.startDate} end={t.endDate} />
-                                        <div className="h-10 w-px bg-neutral-200 dark:bg-neutral-700/50 mx-2 hidden sm:block"></div>
-                                        <div className="min-w-0 flex-1">
-                                            <a
-                                                href={t.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-lg font-semibold text-neutral-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition break-words leading-snug block"
-                                            >
-                                                {t.name}
-                                            </a>
-                                            <div className="mt-1 flex items-center gap-2">
-                                                <span className="text-xs text-neutral-500 font-mono">Registered</span>
-                                                {t.ratingType === 'rapid' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">RAPID</span>}
-                                                {t.ratingType === 'blitz' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">BLITZ</span>}
-                                                {(t.ratingType === 'standard' || !t.ratingType) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">STD</span>}
-                                                {t.rounds && (
-                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 flex items-center gap-1">
-                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                                        {t.rounds.replace('Rounds', '')?.replace('Rondas', '')?.trim()} Rds
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <svg className="w-5 h-5 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                 </div>
                             ))}
                         </div>
                     </div>
-                )}
+                </div>
+            </div>
+
+            <div className="max-w-6xl mx-auto px-4 py-12">
+                <div className="flex flex-col lg:flex-row gap-8">
+                    {/* Main Content: Tournament Lists */}
+                    <div className="flex-1 space-y-12">
+                        {/* Pending Tournaments List */}
+                        {pendingList.length > 0 && (
+                            <div>
+                                <h2 className="text-2xl font-black mb-6 text-neutral-900 dark:text-white flex items-center gap-3 tracking-tight">
+                                    Waiting for FIDE Rating
+                                    <span className="text-[10px] font-bold text-white bg-amber-500 px-2 py-1 rounded-full tracking-widest uppercase shadow-sm">Pending</span>
+                                </h2>
+                                <div className="space-y-3">
+                                    {pendingList.map((t, i) => (
+                                        <div key={i} className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-4 flex flex-col sm:flex-row sm:items-center gap-4 group transition-all hover:border-amber-200 dark:hover:border-amber-900/50 shadow-sm">
+                                            <DateBadge start={t.startDate} end={t.endDate} />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    {t.ratingType && (
+                                                        <span className="px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 text-[8px] font-black uppercase tracking-widest rounded">{t.ratingType}</span>
+                                                    )}
+                                                    <span className="text-xs text-neutral-400 font-mono">Last updated: {t.lastUpdate ? new Date(t.lastUpdate).toLocaleDateString() : 'N/A'}</span>
+                                                </div>
+                                                <a
+                                                    href={t.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {t.name}
+                                                </a>
+                                            </div>
+                                            <div className="flex items-center gap-4 self-end sm:self-center">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-xl font-black text-emerald-500 leading-none">
+                                                        {t.change > 0 ? '+' : ''}{t.change.toFixed(1)}
+                                                    </span>
+                                                    <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mt-1">Pending</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Active Tournaments List */}
+                        <div>
+                            <h2 className="text-2xl font-black mb-6 text-neutral-900 dark:text-white flex items-center gap-3 tracking-tight">
+                                Current Live Rating
+                                <span className="text-[10px] font-bold text-white bg-blue-600 px-2 py-1 rounded-full tracking-widest uppercase shadow-sm">Active</span>
+                            </h2>
+                            {activeList.length > 0 ? (
+                                <div className="space-y-4">
+                                    {activeList.map((t, i) => (
+                                        <div
+                                            key={i}
+                                            onClick={() => toggleExpand(t.name)}
+                                            className="bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-sm overflow-hidden cursor-pointer hover:border-blue-400 dark:hover:border-blue-500/50 transition-all duration-300"
+                                        >
+                                            <div className="p-5 md:p-6 flex flex-col sm:flex-row sm:items-center gap-5">
+                                                <DateBadge start={t.startDate} end={t.endDate} />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        {t.ratingType && (
+                                                            <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[8px] font-black uppercase tracking-widest rounded">{t.ratingType}</span>
+                                                        )}
+                                                        <span className="text-xs text-neutral-400 font-mono">ID: {t.url.split('tnr=')[1]?.split('&')[0] || 'N/A'}</span>
+                                                    </div>
+                                                    <a
+                                                        href={t.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-lg font-semibold text-neutral-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 transition break-words leading-snug block"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        {t.name}
+                                                    </a>
+                                                </div>
+                                                <div className="flex items-center gap-6 self-end sm:self-center">
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={`text-2xl font-black leading-none ${t.change > 0 ? 'text-emerald-500' : t.change < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                                                            {t.change > 0 ? '+' : ''}{t.change.toFixed(1)}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mt-1">Live Var</span>
+                                                    </div>
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-transform duration-300 ${expandedTournaments.has(t.name) ? 'rotate-180 bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700' : 'bg-neutral-50 dark:bg-neutral-800/30 border-neutral-100 dark:border-neutral-800'}`}>
+                                                        <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {expandedTournaments.has(t.name) && t.games && (
+                                                <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/20 p-4 md:p-6 animate-in slide-in-from-top-4 duration-300">
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-left text-sm">
+                                                            <thead>
+                                                                <tr className="text-[10px] font-black uppercase tracking-[0.15em] text-neutral-400 border-b border-neutral-200 dark:border-neutral-800">
+                                                                    <th className="pb-4 pl-2">Rd</th>
+                                                                    <th className="pb-4">Opponent</th>
+                                                                    <th className="pb-4">Elo</th>
+                                                                    <th className="pb-4 text-center">Res</th>
+                                                                    <th className="pb-4 text-right pr-2">Change</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                                                                {t.games.map((g, gi) => (
+                                                                    <tr key={gi} className="group hover:bg-neutral-100/50 dark:hover:bg-neutral-800/30 transition-colors">
+                                                                        <td className="py-3 pl-2 font-mono text-neutral-400 text-xs">{g.round}</td>
+                                                                        <td className="py-3 font-bold text-neutral-700 dark:text-neutral-300">{g.opponentName}</td>
+                                                                        <td className="py-3 font-mono text-neutral-500 text-xs">{g.opponentRating || '-'}</td>
+                                                                        <td className="py-3 text-center">
+                                                                            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black ${g.result === '1' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : g.result === '0' ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400' : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300'}`}>
+                                                                                {g.result === '1' ? 'W' : g.result === '0' ? 'L' : 'D'}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className={`py-3 text-right pr-2 font-black ${g.change > 0 ? 'text-emerald-500' : g.change < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                                                                            {g.change > 0 ? '+' : ''}{g.change.toFixed(1)}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-dashed border-neutral-300 dark:border-neutral-800 p-12 text-center">
+                                    <p className="text-neutral-500 font-bold">No active tournaments found for current period.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Next Tournaments List */}
+                        {nextList.length > 0 && (
+                            <div>
+                                <h2 className="text-2xl font-black mb-6 text-neutral-900 dark:text-white flex items-center gap-3 tracking-tight">
+                                    Tournament Calendar
+                                    <span className="text-[10px] font-bold text-white bg-neutral-900 dark:bg-white dark:text-black px-2 py-1 rounded-full tracking-widest uppercase">Next</span>
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {nextList.map((t, i) => (
+                                        <div key={i} className="bg-white dark:bg-neutral-900/40 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6 flex items-center gap-5 group hover:border-blue-400 transition-all shadow-sm">
+                                            <div className="flex flex-col items-center justify-center w-12 h-12 bg-neutral-50 dark:bg-neutral-800 rounded-xl">
+                                                <svg className="w-6 h-6 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <a
+                                                    href={t.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-lg font-semibold text-neutral-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition break-words leading-snug block"
+                                                >
+                                                    {t.name}
+                                                </a>
+                                                <span className="text-[10px] font-black tracking-widest text-neutral-400 uppercase">Registered</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sidebar: History / Extra Info */}
+                    <div className="lg:w-80 space-y-8">
+                        <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200 dark:border-neutral-800 p-6 shadow-sm">
+                            <h3 className="text-sm font-black text-neutral-900 dark:text-white uppercase tracking-widest mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-4">Rating History</h3>
+                            <div className="space-y-4">
+                                {data.history && data.history.slice(0, 12).map((item, hi) => (
+                                    <div key={hi} className="flex justify-between items-center group">
+                                        <span className="text-xs font-bold text-neutral-400 uppercase tabular-nums">{item.date}</span>
+                                        <span className="text-sm font-black text-neutral-600 dark:text-neutral-300 group-hover:text-blue-500 transition-colors tabular-nums">{item.rating || '-'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-6 text-white shadow-xl shadow-blue-500/20">
+                            <h3 className="font-black text-lg mb-2 uppercase tracking-tight">Stay Updated</h3>
+                            <p className="text-blue-100 text-sm font-bold leading-relaxed mb-6">Our live rating scanner updates these numbers directly from FIDE and Chess-Results sources every hour.</p>
+                            <Link href="/" className="block w-full py-3 bg-white text-blue-600 rounded-xl font-black text-center text-sm shadow-lg hover:bg-neutral-50 transition-all active:scale-95 uppercase tracking-widest">
+                                Search New Player
+                            </Link>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

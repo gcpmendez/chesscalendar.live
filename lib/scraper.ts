@@ -1,6 +1,9 @@
 import * as cheerio from 'cheerio';
+import * as https from 'https';
+import { IncomingMessage } from 'http';
+import fetch from 'node-fetch';
 import { db } from './firebaseAdmin';
-const admin = require('firebase-admin'); // For ServerTimestamp if needed, but db.collection().set() works with new Date()
+const admin = require('firebase-admin');
 
 const CHEERIO_CONFIG = {
     headers: {
@@ -8,11 +11,12 @@ const CHEERIO_CONFIG = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
     },
-    cache: 'no-store' as RequestCache // Disable Next.js Data Cache
+    cache: 'no-store' as RequestCache
 };
 
-// Simple in-memory cache for FIDE rated tournaments to avoid rate limits and improve performance
 const FIDE_RATED_CACHE = new Map<string, { data: { name: string; ratingType: 'standard' | 'rapid' | 'blitz' }[], expiry: number }>();
+const HISTORY_CACHE = new Map<string, { data: { date: string, rating: number | null, rapid: number | null, blitz: number | null }[], expiry: number }>();
+const PROFILE_CACHE = new Map<string, { data: ScrapedProfile, expiry: number }>();
 const FIDE_FETCH_LOCKS = new Map<string, Promise<{ name: string; ratingType: 'standard' | 'rapid' | 'blitz' }[]>>();
 
 export interface ScrapedProfile {
@@ -24,81 +28,92 @@ export interface ScrapedProfile {
     born?: number;
     sex?: string;
     title?: string;
+    maxStd?: number;
 }
 
 export async function getFideProfile(fideId: string): Promise<ScrapedProfile | null> {
-    try {
-        const url = `https://ratings.fide.com/profile/${fideId}`;
-        const res = await fetch(url, CHEERIO_CONFIG);
-        if (!res.ok) return null;
+    const cached = PROFILE_CACHE.get(fideId);
+    if (cached && cached.expiry > Date.now()) return cached.data;
 
-        const html = await res.text();
-        const $ = cheerio.load(html);
+    const MAX_RETRIES = 3;
+    let lastError: any;
 
-        // Name handling
-        const name = $('.profile-top-title').text().trim() || $('head title').text().replace(' FIDE Profile', '').trim();
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 0) {
+                console.log(`[FIDE-PROFILE] Retry ${attempt + 1}/${MAX_RETRIES} for ${fideId}`);
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
 
-        // Robust Regex Parsing for Ratings
-        const text = $('body').text();
-        // Regex matches "Std Rating 2083" or "2083 Standard"
-        // We match both "Label Value" and "Value Label" patterns
-        const matchStd = text.match(/Std\.?\s*Rating\s*[:\.]?\s*(\d{4})/i) ||
-            text.match(/Standard\s*Rating\s*[:\.]?\s*(\d{4})/i) ||
-            text.match(/(\d{4})\s*Std/i) ||
-            text.match(/(\d{4})\s*Standard/i);
-
-        const matchRapid = text.match(/Rapid\s*Rating\s*[:\.]?\s*(\d{4})/i) ||
-            text.match(/(\d{4})\s*Rapid/i);
-
-        const matchBlitz = text.match(/Blitz\s*Rating\s*[:\.]?\s*(\d{4})/i) ||
-            text.match(/(\d{4})\s*Blitz/i);
-
-        let std = matchStd ? parseInt(matchStd[1], 10) : 0;
-        let rapid = matchRapid ? parseInt(matchRapid[1], 10) : 0;
-        let blitz = matchBlitz ? parseInt(matchBlitz[1], 10) : 0;
-
-        // Fallback to DOM scan if Regex fails
-        if (!std) {
-            $('.profile-top-rating-data').each((_, el) => {
-                const content = $(el).text().trim();
-                const valStr = $(el).find('.profile-top-rating-val').text().trim();
-                const val = parseInt(valStr, 10);
-
-                if (!isNaN(val)) {
-                    if (content.toLowerCase().includes('std') || content.toLowerCase().includes('standard')) std = val;
-                    if (content.toLowerCase().includes('rapid')) rapid = val;
-                    if (content.toLowerCase().includes('blitz')) blitz = val;
-                }
+            const html = await new Promise<string>((resolve, reject) => {
+                const options = {
+                    hostname: 'ratings.fide.com',
+                    path: `/profile/${fideId}`,
+                    method: 'GET',
+                    headers: CHEERIO_CONFIG.headers,
+                    timeout: 10000
+                };
+                const req = https.request(options, (res) => {
+                    if (res.statusCode !== 200) return reject(new Error(`Status ${res.statusCode}`));
+                    let data = '';
+                    res.on('data', chunk => data += chunk.toString());
+                    res.on('end', () => resolve(data));
+                });
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+                req.end();
             });
+
+            const $ = cheerio.load(html);
+            const name = $('.profile-top-title').text().trim() || $('head title').text().replace(' FIDE Profile', '').trim();
+            if (!name || name.toLowerCase().includes('not found') || name.length < 2) return null;
+
+            const text = $('body').text();
+            const matchStd = text.match(/Std\.?\s*Rating\s*[:\.]?\s*(\d{4})/i) || text.match(/Standard\s*Rating\s*[:\.]?\s*(\d{4})/i) || text.match(/(\d{4})\s*Std/i) || text.match(/(\d{4})\s*Standard/i);
+            const matchRapid = text.match(/Rapid\s*Rating\s*[:\.]?\s*(\d{4})/i) || text.match(/(\d{4})\s*Rapid/i);
+            const matchBlitz = text.match(/Blitz\s*Rating\s*[:\.]?\s*(\d{4})/i) || text.match(/(\d{4})\s*Blitz/i);
+
+            let std = matchStd ? parseInt(matchStd[1], 10) : 0;
+            let rapid = matchRapid ? parseInt(matchRapid[1], 10) : 0;
+            let blitz = matchBlitz ? parseInt(matchBlitz[1], 10) : 0;
+
+            if (!std) {
+                $('.profile-top-rating-data').each((_, el) => {
+                    const content = $(el).text().trim().toLowerCase();
+                    const val = parseInt($(el).find('.profile-top-rating-val').text().trim(), 10);
+                    if (!isNaN(val)) {
+                        if (content.includes('std') || content.includes('standard')) std = val;
+                        if (content.includes('rapid')) rapid = val;
+                        if (content.includes('blitz')) blitz = val;
+                    }
+                });
+            }
+
+            const fed = $('.profile-info-country').text().trim();
+            const bornStr = $('.profile-info-byear').text().trim();
+            const born = bornStr ? parseInt(bornStr, 10) : undefined;
+            const sex = $('.profile-info-sex').text().trim();
+            const title = $('.profile-info-title p').first().text().trim() || $('.profile-info-title').text().trim();
+
+            const matchBest = text.match(/best\s*rating\s*[:\.]?\s*(\d{4})/i) || text.match(/max\s*rating\s*[:\.]?\s*(\d{4})/i) || text.match(/highest\s*rating\s*[:\.]?\s*(\d{4})/i);
+            let maxStd = matchBest ? parseInt(matchBest[1], 10) : 0;
+            if (maxStd < std) maxStd = std;
+
+            const profile = { name, std, rapid, blitz, fed, born: isNaN(born!) ? undefined : born, sex, title: title === 'None' ? undefined : title, maxStd };
+            PROFILE_CACHE.set(fideId, { data: profile, expiry: Date.now() + 10 * 60 * 1000 });
+            return profile;
+        } catch (e) {
+            console.error(`[FIDE-PROFILE] Error:`, e);
+            lastError = e;
         }
-
-        // Detailed Profile Data
-        const fed = $('.profile-info-country').text().trim();
-        const bornStr = $('.profile-info-byear').text().trim();
-        const born = bornStr ? parseInt(bornStr, 10) : undefined;
-        const sex = $('.profile-info-sex').text().trim();
-        const title = $('.profile-info-title p').first().text().trim() || $('.profile-info-title').text().trim(); // sometimes generic title
-
-        console.log(`[FIDE DEBUG] Name: ${name}, Fed: ${fed}, Born: ${born}, Sex: ${sex}, Title: ${title}`);
-
-        return {
-            name,
-            std,
-            rapid,
-            blitz,
-            fed,
-            born: isNaN(born!) ? undefined : born,
-            sex,
-            title: title === 'None' ? undefined : title
-        };
-
-    } catch (e) {
-        console.error("FIDE Scraper Error:", e);
-        return null;
     }
+    return null;
 }
 
 export async function getFideRatingHistory(fideId: string): Promise<{ date: string, rating: number | null, rapid: number | null, blitz: number | null }[]> {
+    const cached = HISTORY_CACHE.get(fideId);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
     try {
         const url = `https://ratings.fide.com/a_chart_data.phtml?event=${fideId}&period=0`;
         const res = await fetch(url, {
@@ -108,40 +123,34 @@ export async function getFideRatingHistory(fideId: string): Promise<{ date: stri
                 'Referer': `https://ratings.fide.com/profile/${fideId}/chart`,
                 'Origin': 'https://ratings.fide.com',
                 'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/x-www-form-urlencoded' // Often expected for POST even if empty body
+                'Content-Type': 'application/x-www-form-urlencoded'
             }
         });
 
         if (!res.ok) return [];
-
         const text = await res.text();
         if (!text || text.trim().length === 0) return [];
 
-        try {
-            const data = JSON.parse(text);
-            if (Array.isArray(data)) {
-                return data.map((item: any) => {
-                    const std = parseInt(item.rating || '0', 10);
-                    const rapid = parseInt(item.rapid_rtng || '0', 10);
-                    const blitz = parseInt(item.blitz_rtng || '0', 10);
-
-                    return {
-                        date: item.date_2 || '',
-                        rating: std > 0 ? std : null,
-                        rapid: rapid > 0 ? rapid : null,
-                        blitz: blitz > 0 ? blitz : null
-                    };
-                }).filter(item => item.rating !== null || item.rapid !== null || item.blitz !== null);
-            }
-        } catch (jsonErr) {
-            console.error(`[FIDE-HISTORY] JSON Parse Error:`, jsonErr);
+        const data = JSON.parse(text);
+        if (Array.isArray(data)) {
+            const history = data.map((item: any) => {
+                const std = parseInt(item.rating || '0', 10);
+                const rapid = parseInt(item.rapid_rtng || '0', 10);
+                const blitz = parseInt(item.blitz_rtng || '0', 10);
+                return {
+                    date: item.date_2 || '',
+                    rating: std > 0 ? std : null,
+                    rapid: rapid > 0 ? rapid : null,
+                    blitz: blitz > 0 ? blitz : null
+                };
+            }).filter(item => item.rating !== null || item.rapid !== null || item.blitz !== null);
+            HISTORY_CACHE.set(fideId, { data: history, expiry: Date.now() + 10 * 60 * 1000 });
+            return history;
         }
-
-        return [];
     } catch (e) {
         console.error("FIDE History Error:", e);
-        return [];
     }
+    return [];
 }
 
 
@@ -464,42 +473,32 @@ export async function getChessResultsData(fideId: string, playerName?: string, p
 
         console.log(`Active/Pending Tournaments: ${activeTournaments.length}`);
 
-        // Limit concurrency? 
         const promises = activeTournaments.slice(0, 10).map(async (info) => {
-            // Determine filter date based on tournament end date
-            // If it ends in previous month, we want games from previous month.
-            // If it ends in current or future, we typically want games from current month (unless it's a very long tournament?)
-            // For now:
-            // - Ends < Current Month Start -> Filter from Previous Month Start
-            // - Ends >= Current Month Start -> Filter from Current Month Start (Standard Live Rating logic)
-
             let minDateObj: Date | undefined = undefined;
             const tEnd = info.endDate ? new Date(info.endDate) : new Date();
 
+            const isRated = ratedCalculations.some(rt => areTournamentsSame(info.name, rt.name));
+
             if (tEnd < firstOfCurrentMonth) {
-                // Pending Tournament Candidate
                 minDateObj = prevMonthDate;
             } else {
-                // Active Tournament
-                minDateObj = firstOfCurrentMonth;
+                if (isRated) {
+                    minDateObj = prevMonthDate;
+                } else {
+                    minDateObj = prevMonthDate;
+                    console.log(`[ACTIVE-UNRATED] including games from prev month for ${info.name}`);
+                }
             }
 
-            const result = await scrapeTournament(info.url, profile, minDateObj);
+            const isActivePeriod = tEnd >= firstOfCurrentMonth;
+            const allowLiveOverride = isActivePeriod || (!minDateObj || minDateObj >= firstOfCurrentMonth);
+            const result = await scrapeTournament(info.url, profile, minDateObj, allowLiveOverride, isRated, tEnd);
 
             if (result) {
                 const d = result.endDate || tEnd;
-                // Mark as pending if from previous month and NOT in rated list
                 if (d >= prevMonthDate && d < firstOfCurrentMonth) {
-                    const tName = result.name.toLowerCase();
-                    // Check if already rated (fuzzy match)
-                    const isRated = ratedCalculations.some(rated => {
-                        const rName = rated.name.toLowerCase(); // Updated from event.toLowerCase()
-                        return areTournamentsSame(tName, rName); // Use robust matching
-                    });
-
-                    if (!isRated) {
-                        result.isPending = true;
-                    }
+                    const isRatedAlready = ratedCalculations.some(rated => areTournamentsSame(result.name, rated.name));
+                    if (!isRatedAlready) result.isPending = true;
                 }
             }
             return result;
@@ -1000,7 +999,7 @@ function calculateRatingChange(playerElo: number, opponentElo: number, score: nu
 }
 
 // Helper: Scrape Tournament Page
-export async function scrapeTournament(tUrl: string, profile?: ScrapedProfile, minDate?: Date): Promise<TournamentChange | null> {
+export async function scrapeTournament(tUrl: string, profile?: ScrapedProfile, minDate?: Date, allowLiveOverride: boolean = true, isRated: boolean = false, searchDate?: Date): Promise<TournamentChange | null> {
     try {
         // 1. Fetch Participant Map First (to get Opponent FIDE IDs)
         const participantsMap = await getTournamentParticipants(tUrl);
@@ -1332,12 +1331,22 @@ export async function scrapeTournament(tUrl: string, profile?: ScrapedProfile, m
             await Promise.all(gamePromises);
         }
 
+        let startDate: Date | undefined;
+        let endDate: Date | undefined;
+        const dateLineMatch = allText.match(/(?:Fecha|Date)\s*(\d{4}\/\d{2}\/\d{2})\s*(?:al|to|-)\s*(\d{4}\/\d{2}\/\d{2})/i);
+        if (dateLineMatch) {
+            startDate = new Date(dateLineMatch[1]);
+            endDate = new Date(dateLineMatch[2]);
+        } else if (searchDate) {
+            startDate = searchDate;
+            endDate = searchDate;
+        }
+
         let filteredGames = games;
         let finalChange = 0;
 
         if (found) {
             const schedule = await getTournamentSchedule(tUrl);
-
             let filterDate = minDate;
             if (!filterDate) {
                 const now = new Date();
@@ -1345,30 +1354,25 @@ export async function scrapeTournament(tUrl: string, profile?: ScrapedProfile, m
                 filterDate.setHours(0, 0, 0, 0);
             }
 
+            if (startDate && endDate) {
+                const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays > 9 && isRated) {
+                    const activeStart = new Date();
+                    activeStart.setDate(activeStart.getDate() - 1);
+                    activeStart.setHours(0, 0, 0, 0);
+                    if (filterDate < activeStart) filterDate = activeStart;
+                }
+            }
+
             if (schedule.size > 0) {
                 filteredGames = games.filter(g => {
                     const info = schedule.get(g.round);
-                    if (!info) return false;
+                    if (!info) return startDate && filterDate && startDate >= filterDate;
                     return info.date >= filterDate!;
                 });
             }
-
             finalChange = parseFloat(filteredGames.reduce((acc, g) => acc + g.change, 0).toFixed(2));
-        }
-
-        let startDate: Date | undefined;
-        let endDate: Date | undefined;
-
-        const dateLineMatch = allText.match(/(?:Fecha|Date)\s*(\d{4}\/\d{2}\/\d{2})\s*(?:al|to|-)\s*(\d{4}\/\d{2}\/\d{2})/i);
-        if (dateLineMatch) {
-            startDate = new Date(dateLineMatch[1]);
-            endDate = new Date(dateLineMatch[2]);
-        } else {
-            const singleDateMatch = allText.match(/(?:Fecha|Date)\s*(\d{4}\/\d{2}\/\d{2})/i);
-            if (singleDateMatch) {
-                startDate = new Date(singleDateMatch[1]);
-                endDate = new Date(singleDateMatch[1]);
-            }
         }
 
         if (found || tName) {
